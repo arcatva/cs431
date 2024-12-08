@@ -16,6 +16,9 @@ struct Node {
 #[derive(Debug, Clone)]
 pub struct Token(*mut CachePadded<Node>);
 
+unsafe impl Send for Token {}
+unsafe impl Sync for Token {}
+
 /// An MCS parking lock.
 #[derive(Debug)]
 pub struct McsParkingLock {
@@ -86,6 +89,9 @@ unsafe impl RawLock for McsParkingLock {
         // SAFETY: See safety of McsLock::unlock().
         drop(unsafe { Box::from_raw(node) });
         let next_ref = unsafe { &*next };
+
+        // It is important to clone the thread before unlocking, the next waiter,
+        // because then the next waiter may free `next_ref`.
         let thread = next_ref.thread.clone();
         next_ref.locked.store(false, Release);
         thread.unpark();

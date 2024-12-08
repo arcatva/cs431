@@ -6,12 +6,14 @@ use core::ops::{Deref, DerefMut};
 ///
 /// # Safety
 ///
-/// Implementations of this trait must ensure that the lock is actually
-/// exclusive: a lock can't be acquired while the lock is already locked.
+/// Implementations of this trait must ensure that the lock is actually exclusive: a lock can't be
+/// acquired while the lock is already locked.
 // TODO: For weak memory, there needs to be a bit more stricter condition. unlock -hb→ lock.
 pub unsafe trait RawLock: Default + Send + Sync {
     /// Raw lock's token type.
-    type Token;
+    ///
+    /// Send + Sync is needed to make LockGuard Send + Sync.
+    type Token: Send + Sync;
 
     /// Acquires the raw lock.
     fn lock(&self) -> Self::Token;
@@ -28,8 +30,9 @@ pub unsafe trait RawLock: Default + Send + Sync {
 ///
 /// # Safety
 ///
-/// Implementations of this trait must ensure that the lock is actually
-/// exclusive: a lock can't be acquired while the lock is already locked.
+/// Implementations of this trait must ensure that the lock is actually exclusive: a lock can't be
+/// acquired while the lock is already locked.
+///
 /// Also, `try_lock()`, when successful, should return a token that can be used for
 /// `RawLock::unlock`.
 pub unsafe trait RawTryLock: RawLock {
@@ -39,14 +42,27 @@ pub unsafe trait RawTryLock: RawLock {
 
 /// A type-safe lock.
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Lock<L: RawLock, T> {
     inner: L,
     data: UnsafeCell<T>,
 }
 
-unsafe impl<L: RawLock, T: Send> Send for Lock<L, T> {}
+// Send is automatically implemented for Lock.
 unsafe impl<L: RawLock, T: Send> Sync for Lock<L, T> {}
+
+impl<L: RawLock, T: Default> Default for Lock<L, T>
+where
+    L: Default,
+{
+    // Manual impl for minimum trait bound.
+    fn default() -> Self {
+        Self {
+            inner: L::default(),
+            data: UnsafeCell::default(),
+        }
+    }
+}
 
 impl<L: RawLock, T> Lock<L, T> {
     /// Creates a new lock.
@@ -83,14 +99,12 @@ impl<L: RawTryLock, T> Lock<L, T> {
 }
 
 /// A guard that holds the lock and dereferences the inner value.
+// Send/Sync are automatically implemented.
 #[derive(Debug)]
 pub struct LockGuard<'s, L: RawLock, T> {
     lock: &'s Lock<L, T>,
     token: ManuallyDrop<L::Token>,
 }
-
-unsafe impl<L: RawLock, T: Send> Send for LockGuard<'_, L, T> {}
-unsafe impl<L: RawLock, T: Sync> Sync for LockGuard<'_, L, T> {}
 
 impl<L: RawLock, T> Drop for LockGuard<'_, L, T> {
     fn drop(&mut self) {
