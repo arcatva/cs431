@@ -1,5 +1,4 @@
 //! Thread pool that joins all thread when dropped.
-
 use core::time;
 // NOTE: Crossbeam channels are MPMC, which means that you don't need to wrap the receiver in
 // Arc<Mutex<..>>. Just clone the receiver and give it to each worker thread.
@@ -19,18 +18,13 @@ struct Worker {
 impl Worker {
     fn new(_id: usize, receiver: Receiver<Job>, pool_inner: Arc<ThreadPoolInner>) -> Worker {
         Worker {
-            _id: _id,
+            _id,
             thread: Some(
                 thread::Builder::new()
-                    .spawn(move || loop {
-                        match receiver.recv() {
-                            Ok(job) => {
-                                job.0();
-                                pool_inner.finish_job();
-                            }
-                            Err(_) => {
-                                break;
-                            }
+                    .spawn(move || {
+                        while let Ok(job) = receiver.recv() {
+                            job.0();
+                            pool_inner.finish_job();
                         }
                     })
                     .unwrap(),

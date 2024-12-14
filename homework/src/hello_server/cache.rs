@@ -19,7 +19,7 @@ impl<K, V> Default for Cache<K, V> {
         for i in 0..NUM_PARTITIONS {
             inner.push(RwLock::new(HashMap::new()));
         }
-        return Cache { inner: inner };
+        Cache { inner }
     }
 }
 
@@ -44,15 +44,12 @@ impl<K: Eq + Hash + Clone, V: Clone> Cache<K, V> {
         let partition = (hasher.finish() % 32) as usize;
         {
             let guard = self.inner[partition].read().unwrap();
-            match guard.get(&key) {
-                Some(v) => {
-                    return v.clone();
-                }
-                None => {}
+            if let Some(v) = guard.get(&key) {
+                return v.clone();
             }
         }
         let mut guard = self.inner[partition].write().unwrap();
         let v = guard.entry(key.clone()).or_insert_with(move || f(key));
-        return v.clone();
+        v.clone()
     }
 }
